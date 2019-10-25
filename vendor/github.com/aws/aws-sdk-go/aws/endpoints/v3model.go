@@ -54,8 +54,9 @@ type partition struct {
 
 func (p partition) Partition() Partition {
 	return Partition{
-		id: p.ID,
-		p:  &p,
+		dnsSuffix: p.DNSSuffix,
+		id:        p.ID,
+		p:         &p,
 	}
 }
 
@@ -78,6 +79,12 @@ func (p partition) EndpointFor(service, region string, opts ...func(*Options)) (
 	var opt Options
 	opt.Set(opts...)
 
+	if service == "sts" && opt.STSRegionalEndpoint != RegionalSTSEndpoint {
+		if _, ok := stsLegacyGlobalRegions[region]; ok {
+			region = "aws-global"
+		}
+	}
+
 	s, hasService := p.Services[service]
 	if !(hasService || opt.ResolveUnknownService) {
 		// Only return error if the resolver will not fallback to creating
@@ -91,6 +98,7 @@ func (p partition) EndpointFor(service, region string, opts ...func(*Options)) (
 	}
 
 	defs := []endpoint{p.Defaults, s.Defaults}
+
 	return e.resolve(service, region, p.DNSSuffix, defs, opt), nil
 }
 
@@ -226,16 +234,20 @@ func (e endpoint) resolve(service, region, dnsSuffix string, defs []endpoint, op
 	if len(signingRegion) == 0 {
 		signingRegion = region
 	}
+
 	signingName := e.CredentialScope.Service
+	var signingNameDerived bool
 	if len(signingName) == 0 {
 		signingName = service
+		signingNameDerived = true
 	}
 
 	return ResolvedEndpoint{
-		URL:           u,
-		SigningRegion: signingRegion,
-		SigningName:   signingName,
-		SigningMethod: getByPriority(e.SignatureVersions, signerPriority, defaultSigner),
+		URL:                u,
+		SigningRegion:      signingRegion,
+		SigningName:        signingName,
+		SigningNameDerived: signingNameDerived,
+		SigningMethod:      getByPriority(e.SignatureVersions, signerPriority, defaultSigner),
 	}
 }
 
